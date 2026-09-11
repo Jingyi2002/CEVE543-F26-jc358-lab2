@@ -3,6 +3,7 @@ title: "Lab 2: Climate as a dynamical system"
 week: 2
 module: 1
 date: 2026-09-04
+author: "Jingyi Chen"
 due:
   - label: "Lab 2 due"
     date: 2026-09-11
@@ -270,6 +271,7 @@ fig
 
 ```{julia}
 #| solution: false
+#| output: true
 @printf("slope spread (K/decade): oscillator %.3g, no memory %.3g, ratio %.3g",
     std(slopes) * 10, std(slopes_independent) * 10,
     std(slopes) / std(slopes_independent))
@@ -294,9 +296,60 @@ Double $\sigma_T$ from 2.22 to 4.44 and rerun the experiment.
 Does the spread of fitted slopes change?
 Does the ratio between the oscillator's spread and the no-memory spread change?
 
+```{julia}
+#| solution: false
+#| output: false
+function slope_experiment(σT; n_window=50, n_trials=1000, seed=543)
+    rng = MersenneTwister(seed)
+    T_series, _ = simulate_sro(rng; n_years=10_000, σT=σT)
+    rng_w = MersenneTwister(seed)
+    starts = rand(rng_w, 1:(length(T_series) - n_window), n_trials)
+    slopes_osc = [ols_slope(T_series[s:(s + n_window - 1)]) for s in starts]
+    slopes_ind = [ols_slope(randn(rng_w, n_window) .* std(T_series)) for _ in 1:n_trials]
+    return (; T_series, slopes_osc, slopes_ind)
+end
+
+base = slope_experiment(2.22)
+loud = slope_experiment(4.44)
+```
+
+```{julia}
+#| solution: false
+#| output: true
+for (label, ex) in (("σT = 2.22", base), ("σT = 4.44", loud))
+    @printf("%s | std(T) %.3f | lag-1 ρ %.3f | oscillator %.3f | no memory %.3f | ratio %.3f\n",
+        label, std(ex.T_series), autocor(ex.T_series, [1])[1],
+        std(ex.slopes_osc) * 10, std(ex.slopes_ind) * 10,
+        std(ex.slopes_osc) / std(ex.slopes_ind))
+end
+```
+
+```{julia}
+#| solution: false
+fig = Figure(; size=(900, 340))
+axs = Axis[]
+for (i, (label, ex)) in enumerate(((L"\sigma_T = 2.22", base), (L"\sigma_T = 4.44", loud)))
+    ax = Axis(fig[1, i]; xlabel=L"\text{fitted slope (K decade}^{-1}\text{)}", title=label)
+    hist!(ax, ex.slopes_ind .* 10; bins=50, normalization=:pdf,
+        color=(:gray, 0.6), label=L"\text{no memory}")
+    hist!(ax, ex.slopes_osc .* 10; bins=50, normalization=:pdf,
+        color=(:firebrick, 0.6), label=L"\text{recharge oscillator}")
+    hideydecorations!(ax)
+    push!(axs, ax)
+end
+linkxaxes!(axs...)
+axislegend(axs[2]; position=:rt)
+fig
+```
+
 **Your answer.**
 
-> *Answer here*
+>*Yes, both change, and they move in opposite directions. Doubling $\sigma_T$ increases the spread of the recharge oscillator's fitted slopes from about $0.49$ to $0.55 K/decade$. It does not double because $\sigma_T$ is only one source of variability in the recharge oscillator. The total standard deviation of $T$ increases from $2.45$ to $3.24$.*
+
+>*The ratio between the oscillator and no-memory slope spreads decreases from about $1.98$ to $1.70$. The no-memory series is rescaled to have the same standard deviation as $T$, so its slope spread increases by the same factor as $\operatorname{std}(T)$, from $0.24$ to $0.32 K/decade$. The oscillator's spread increases by less, causing the two distributions to become closer.*
+
+>*This occurs because increasing $\sigma_T$ adds more variability directly to $T$ rather than to the slower variability transmitted to $T$ through the thermocline variable $h$. 
+Consistent with this, the lag-1 autocorrelation decreases from $0.74$ to $0.61$. Thus, doubling $\sigma_T$ increases the absolute variability of 50-year fitted trends, while reducing the relative contribution of temporal persistence to that variability*. 
 
 
 ### Vary the record length
@@ -305,9 +358,38 @@ Run the same experiment with 100-year windows instead of 50.
 Report the slope spread and compare it to the 50-year result.
 Does doubling the record length halve the spread?
 
+<!-- `slope_experiment` already takes `n_window`, so rerun it at 100 years and compare to the 50-year run (`base`, computed above) at the same $\sigma_T = 2.22$. -->
+
+```{julia}
+#| solution: false
+#| output: false
+long_window = slope_experiment(2.22; n_window=100)
+```
+
+```{julia}
+#| solution: false
+#| output: true
+@printf("50-year spread: %.4f K/decade\n100-year spread: %.4f K/decade\nratio (100yr / 50yr): %.3f (simple halving would give 0.500)",
+    std(base.slopes_osc) * 10, std(long_window.slopes_osc) * 10,
+    std(long_window.slopes_osc) / std(base.slopes_osc))
+```
+
+```{julia}
+#| solution: false
+fig = Figure(; size=(600, 320))
+ax = Axis(fig[1, 1]; xlabel=L"\text{fitted slope (K decade}^{-1}\text{)}", ylabel=L"\text{density}")
+hist!(ax, base.slopes_osc .* 10; bins=50, normalization=:pdf,
+    color=(:firebrick, 0.6), label=L"\text{50-year windows}")
+hist!(ax, long_window.slopes_osc .* 10; bins=50, normalization=:pdf,
+    color=(:steelblue, 0.6), label=L"\text{100-year windows}")
+hideydecorations!(ax)
+axislegend(ax; position=:rt)
+fig
+```
+
 **Your answer.**
 
-> *Answer here*
+> *No, n_window=100 gives the slope spread of $0.18K/decade$, and n_window=50 gives $0.48K/decade$, a ratio of approximately $0.38$. The results are expected from OLS, with independent data, slope variance scales as $1/n^3$, thus the standard error scales as $n^{-3/2}$. Doubling the window length should shrink the spread approximately by $0.35$, so this is quite close to $0.38$. Persistence can account for this remaining gap because correlated warm or cool stretches affect shorter and longer windows differently, but the $n^{-3/2}$ explains the most.*
 
 
 ### Compare to a fitted AR(1)
@@ -316,9 +398,54 @@ Fit an AR(1) to the annual $T$ series from the long run by computing the lag-1 s
 Simulate a 10,000-year AR(1) series at that coefficient, draw 1,000 random 50-year windows, and compare the slope spread to the recharge oscillator's.
 How close are the two, and what does the comparison tell you?
 
+<!-- `a_fit` (lag-1 autocorrelation) was computed above from `T_long`.
+Simulate an AR(1) at ‘a_fit', scaled to the same std as `T_long` , then run it. -->
+
+```{julia}
+#| solution: false
+#| output: false
+function simulate_ar1(rng, n, a, target_std)
+    x = zeros(n)
+    σ_e = target_std * sqrt(1 - a^2)
+    for i in 2:n
+        x[i] = a * x[i - 1] + σ_e * randn(rng)
+    end
+    return x
+end
+
+rng_ar1 = MersenneTwister(543)
+T_ar1 = simulate_ar1(rng_ar1, 10_000, a_fit, std(T_long))
+
+rng_ar1_windows = MersenneTwister(543)
+starts_ar1 = rand(rng_ar1_windows, 1:(length(T_ar1) - 50), n_trials)
+slopes_ar1 = [ols_slope(T_ar1[s:(s + 49)]) for s in starts_ar1]
+```
+
+```{julia}
+#| solution: false
+#| output: true
+@printf("lag-1 autocorrelation used: %.3f\nrecharge oscillator spread: %.4f K/decade\nAR(1) spread: %.4f K/decade\nratio (AR1 / oscillator): %.3f",
+    a_fit, std(slopes) * 10, std(slopes_ar1) * 10, std(slopes_ar1) / std(slopes))
+```
+
+```{julia}
+#| solution: false
+fig = Figure(; size=(600, 320))
+ax = Axis(fig[1, 1]; xlabel=L"\text{fitted slope (K decade}^{-1}\text{)}", ylabel=L"\text{density}")
+hist!(ax, slopes .* 10; bins=50, normalization=:pdf,
+    color=(:firebrick, 0.6), label=L"\text{recharge oscillator}")
+hist!(ax, slopes_ar1 .* 10; bins=50, normalization=:pdf,
+    color=(:seagreen, 0.6), label=L"\text{fitted AR(1)}")
+hideydecorations!(ax)
+axislegend(ax; position=:rt)
+fig
+```
+
 **Your answer.**
 
-> *Answer here*
+>*The fitted AR(1) gives a 50-year slope spread of about $0.52 K/decade.$,compared with $0.48 K/decade$ for the recharge oscillator. Therefore, AR(1) spread is only slightly larger $8\%$, and the slope distributions overlap strongly. The exact difference varies somehow with the random realization.*
+
+>*This suggests that the lag-1 persistence of the temperature series captures much of the behavior relevant to the variability of 50-year fitted trends. Although the recharge oscillator has a more complicated memory structure than an AR(1), matching its lag-1 autocorrelation is enough to reproduce the trend spread fairly closely. The remaining difference may reflect that higher-lag correlations or the oscillator's multiple timescales still have some effect, so the AR(1) should be viewed as a useful approximation instead of an exact representation of the recharge oscillator.*
 
 
 ## Turning it in
